@@ -6,19 +6,19 @@ from telegram import Update
 from telegram.ext import Application, CommandHandler, MessageHandler, ContextTypes, filters
 from knowledge_base import KNOWLEDGE_BASE
 
-# Загрузка токена
-load_dotenv()
-BOT_TOKEN = os.getenv("BOT_TOKEN")
-
-if not BOT_TOKEN:
-    raise ValueError("❌ Ошибка: токен не найден! Убедитесь, что в файле .env есть строка BOT_TOKEN=ваш_токен")
-
-# Логирование
+# === Настройка логирования ===
 logging.basicConfig(
     format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
     level=logging.INFO
 )
 
+# === Загрузка токена ===
+load_dotenv()
+BOT_TOKEN = os.getenv("BOT_TOKEN")
+if not BOT_TOKEN:
+    raise ValueError("❌ Ошибка: BOT_TOKEN не найден в .env")
+
+# === Поиск ответа ===
 def find_answer(question: str) -> dict | None:
     q = question.lower()
     for item in KNOWLEDGE_BASE:
@@ -26,6 +26,7 @@ def find_answer(question: str) -> dict | None:
             return item
     return None
 
+# === Обработчики ===
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(
         "Здравствуйте! Я — бот по трудовому праву и коллективному договору ОАО «РЖД».\n\n"
@@ -53,19 +54,24 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
     await update.message.reply_text(response)
 
+# === Точка входа ===
 def main():
-    # Создаём приложение
     app = Application.builder().token(BOT_TOKEN).build()
 
-    # Регистрируем обработчики
     app.add_handler(CommandHandler("start", start))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
 
-    print("✅ Бот запущен и ожидает сообщений...")
+    logging.info("✅ Бот запущен. Начинаю опрос...")
     
-    # ЗАПУСК В АСИНХРОННОМ РЕЖИМЕ
+    # КРИТИЧЕСКИ ВАЖНО: запуск через asyncio.run() — только так работает на Render!
     import asyncio
-    asyncio.run(app.run_polling())
+    try:
+        asyncio.run(app.run_polling())
+    except KeyboardInterrupt:
+        logging.info("Бот остановлен пользователем.")
+    except Exception as e:
+        logging.error(f"Ошибка запуска: {e}")
+        raise
 
 if __name__ == "__main__":
     main()
