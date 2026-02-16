@@ -8,17 +8,22 @@ from telegram import Update
 from telegram.ext import Application, CommandHandler, MessageHandler, ContextTypes, filters
 from knowledge_base import KNOWLEDGE_BASE
 
-# === Настройка ===
+# === Настройка логирования ===
+logging.basicConfig(
+    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
+    level=logging.INFO,
+    force=True  # Перезаписывает настройки, если уже были
+)
+
+logger = logging.getLogger(__name__)
+
+# === Загрузка токена ===
 load_dotenv()
 BOT_TOKEN = os.getenv("BOT_TOKEN")
 if not BOT_TOKEN:
-    raise ValueError("❌ BOT_TOKEN не задан в .env")
+    raise ValueError("❌ Ошибка: BOT_TOKEN не найден. Убедитесь, что он задан в переменных окружения.")
 
-logging.basicConfig(
-    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
-    level=logging.INFO
-)
-
+# === Поиск ответа по ключевым словам ===
 def find_answer(question: str) -> dict | None:
     q = question.lower()
     for item in KNOWLEDGE_BASE:
@@ -26,37 +31,62 @@ def find_answer(question: str) -> dict | None:
             return item
     return None
 
+# === Обработчики сообщений ===
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(
         "Здравствуйте! Я — бот по трудовому праву и коллективному договору ОАО «РЖД».\n\n"
         "📌 Задайте любой вопрос, например:\n"
         "• Какая индексация зарплаты на РЖД?\n"
         "• Что положено при рождении ребёнка?\n"
-        "• Могут ли уволить обоих супругов?"
+        "• Могут ли уволить обоих супругов?\n\n"
+        "⚠️ Я не заменяю юриста. Для сложных ситуаций обратитесь к специалисту."
     )
 
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     text = update.message.text.strip()
     if not text:
         return
+
     result = find_answer(text)
     if result:
         response = f"{result['answer']}\n\n📌 Источник: {result['source']}"
     else:
-        response = "Не нашёл ответа. Попробуйте уточнить вопрос."
+        response = (
+            "К сожалению, я не нашёл точного ответа в своей базе.\n\n"
+            "💡 Попробуйте:\n"
+            "• Уточнить вопрос;\n"
+            "• Использовать слова: «РЖД», «зарплата», «отпуск», «увольнение», «льготы»."
+        )
     await update.message.reply_text(response)
 
-# === Главная функция ===
-def main():
+# === Функция очистки webhook'а ===
+async def clear_webhook():
+    """Удаляет webhook, чтобы гарантировать режим polling."""
     app = Application.builder().token(BOT_TOKEN).build()
+    try:
+        await app.bot.delete_webhook(drop_pending_updates=True)
+        logger.info("✅ Webhook успешно удалён. Режим: long polling.")
+    except Exception as e:
+        logger.error(f"⚠️ Ошибка при удалении webhook'а: {e}")
+
+# === Основная функция запуска ===
+def main():
+    logger.info("🚀 Запуск бота...")
+
+    # Шаг 1: Очистка webhook'а
+    asyncio.run(clear_webhook())
+
+    # Шаг 2: Создание приложения
+    app = Application.builder().token(BOT_TOKEN).build()
+
+    # Шаг 3: Регистрация обработчиков
     app.add_handler(CommandHandler("start", start))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
 
-    logging.info("✅ Бот запущен. Начинаю опрос...")
+    logger.info("✅ Бот готов к работе. Начинаю опрос...")
 
-    # Универсальный запуск для Python 3.7–3.14+
+    # Шаг 4: Запуск с поддержкой Python 3.14+
     try:
-        # Попытка стандартного запуска
         asyncio.run(app.run_polling())
     except RuntimeError as e:
         if "no current event loop" in str(e) or "отсутствует текущий цикл" in str(e):
